@@ -1,12 +1,14 @@
-FROM centos
+# Use an official Nginx image from Docker Hub
+FROM nginx:latest
 
-RUN yum install -y httpd
-RUN yum install -y zip
-RUN yum install -y unzip
-ADD https://www.free-css.com/assets/files/free-css-templates/download/page254/photogenic.zip /var/www/html/
-WORKDIR /var/www/html/
-RUN unzip photogenic.zip
-RUN cp -rvf photogenic/* .
-RUN rm -rf photogenic photogenic.zip
-CMD ["/usr/sbin/httpd", "-D", "FOREGROUND"]
-EXPOSE 80 
+# Remove the default Nginx HTML files
+RUN rm -rf /usr/share/nginx/html/*
+
+# Copy a basic HTML file to serve
+COPY index.html /usr/share/nginx/html/
+
+# Expose port 80 to serve web traffic
+EXPOSE 80
+
+# Start Nginx in the foreground (this keeps the container running)
+CMD ["nginx", "-g", "daemon off;"]
