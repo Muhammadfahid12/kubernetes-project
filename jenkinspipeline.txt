@@ -1,0 +1,129 @@
+pipeline {
+    agent any
+
+    environment {
+        // Environment variables for AWS and Node.js project
+        NODE_ENV = 'production'
+        AWS_REGION = 'your-aws-region'
+        EC2_USER = 'ec2-user'
+        EC2_HOST = 'your-ec2-ip'
+        EC2_KEY = 'path-to-your-private-key'
+        APP_DIR = '/path/to/your/nodejs/app/on/ec2'
+        
+        // SonarQube server details (Ensure your Jenkins has SonarQube installed and configured)
+        SONARQUBE_SERVER = 'SonarQube'
+        SONARQUBE_PROJECT = 'your-sonarqube-project-key'
+        SONARQUBE_TOKEN = credentials('your-sonarqube-token') // Set up in Jenkins credentials
+    }
+
+    stages {
+
+        stage('Install Dependencies') {
+            steps {
+                script {
+                    // Install Node.js dependencies
+                    echo "Installing dependencies..."
+                    sh 'npm install'
+                }
+            }
+        }
+
+        stage('Static Code Analysis with SonarQube') {
+            steps {
+                script {
+                    echo "Running SonarQube analysis..."
+                    withSonarQubeEnv('SonarQube') {
+                        sh 'sonar-scanner -Dsonar.projectKey=$SONARQUBE_PROJECT -Dsonar.sources=. -Dsonar.host.url=$SONAR_HOST_URL -Dsonar.login=$SONARQUBE_TOKEN'
+                    }
+                }
+            }
+        }
+
+        stage('Run Unit Tests') {
+            steps {
+                script {
+                    echo "Running unit tests..."
+                    sh 'npm run test:unit'
+                }
+            }
+            post {
+                always {
+                    junit '**/test-reports/unit/*.xml'
+                }
+                failure {
+                    echo 'Unit tests failed!'
+                    error 'Stopping pipeline due to unit test failure'
+                }
+            }
+        }
+
+        stage('Run Integration Tests') {
+            steps {
+                script {
+                    echo "Running integration tests..."
+                    sh 'npm run test:integration'
+                }
+            }
+            post {
+                always {
+                    junit '**/test-reports/integration/*.xml'
+                }
+                failure {
+                    echo 'Integration tests failed!'
+                    error 'Stopping pipeline due to integration test failure'
+                }
+            }
+        }
+
+        stage('Staging Environment Deployment') {
+            steps {
+                script {
+                    echo "Deploying to staging environment..."
+                    // Deployment to staging EC2 instance
+                    sh """
+                        ssh -o StrictHostKeyChecking=no -i $EC2_KEY $EC2_USER@$EC2_HOST << EOF
+                        cd $APP_DIR
+                        git pull origin staging
+                        npm install --production
+                        pm2 restart all
+                        exit
+                        EOF
+                    """
+                }
+            }
+        }
+
+        stage('Manual Approval for Production') {
+            steps {
+                input 'Approve for Production Deployment?'
+            }
+        }
+
+        stage('Production Environment Deployment') {
+            steps {
+                script {
+                    echo "Deploying to production environment..."
+                    // Deployment to production EC2 instance
+                    sh """
+                        ssh -o StrictHostKeyChecking=no -i $EC2_KEY $EC2_USER@$EC2_HOST << EOF
+                        cd $APP_DIR
+                        git pull origin master
+                        npm install --production
+                        pm2 restart all
+                        exit
+                        EOF
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Deployment pipeline completed successfully!"
+        }
+        failure {
+            echo "Deployment pipeline failed!"
+        }
+    }
+}
